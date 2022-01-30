@@ -12,7 +12,11 @@ In this technique, we first steal the token from the WinLogon service, and escal
 
 The following is the diagram of the attack flow. (Source: Original Blogpost).
 
+![](flow.png)
+
 Apart from the original functionality, we have also added the Enable Debug Privilege feature, which sets the debug privilege too.
+
+![](usage.png)
 
 ### References
 
