@@ -10,7 +10,7 @@ In this technique, we first steal the token from the WinLogon service, and escal
 
 ### Attack Flow
 
-The following is the diagram of the attack flow. (Source: Original Blogpost).
+The following is the diagram of the attack flow. (Source: [Original Blogpost](https://www.securityartwork.es/2021/09/27/trustedinstaller-parando-windows-defender/)).
 
 ![](flow.png)
 
