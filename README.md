@@ -22,4 +22,5 @@ Apart from the original functionality, we have also added the Enable Debug Privi
 
 - https://www.securityartwork.es/2021/09/27/trustedinstaller-parando-windows-defender/
 - https://github.com/last-byte/DefenderSwitch
+- https://github.com/APTortellini/DefenderSwitch
 - https://guidedhacking.com/threads/c-sedebugprivilege-adjusttokenprivileges.14926/
